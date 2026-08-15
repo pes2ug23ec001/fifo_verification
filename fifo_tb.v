@@ -10,10 +10,15 @@ module fifo_tb;
     integer i;
     reg [7:0] rand_data;
 
-    // manual coverage tracking flags
     reg saw_full = 0;
     reg saw_empty = 0;
     reg saw_partial = 0;
+
+    reg [7:0] sb_mem [0:63];
+    integer sb_wr_ptr = 0;
+    integer sb_rd_ptr = 0;
+    integer pass_count = 0;
+    integer fail_count = 0;
 
     fifo #(.DATA_WIDTH(8), .ADDR_WIDTH(3)) uut (
         .clk(clk), .rst(rst),
@@ -24,11 +29,16 @@ module fifo_tb;
 
     always #5 clk = ~clk;
 
-    // manual coverage tracking - flags whenever a scenario is actually hit
     always @(posedge clk) begin
         if (full)             saw_full    <= 1;
         if (empty)            saw_empty   <= 1;
         if (!full && !empty)  saw_partial <= 1;
+    end
+
+    always @(posedge clk) begin
+        if (!rst)
+            assert (!(full && empty))
+            else $error("ASSERTION FAILED: full and empty are both true at time %0t", $time);
     end
 
     initial begin
@@ -70,6 +80,8 @@ module fifo_tb;
                 din   = rand_data;
                 wr_en = 1;
                 rd_en = 0;
+                sb_mem[sb_wr_ptr] = rand_data;
+                sb_wr_ptr = sb_wr_ptr + 1;
             end else if (!empty) begin
                 rd_en = 1;
                 wr_en = 0;
@@ -77,11 +89,33 @@ module fifo_tb;
                 wr_en = 0;
                 rd_en = 0;
             end
+            @(posedge clk);
+            if (wr_en) begin
+                wr_en = 0;
+                $display("Wrote: %h | empty=%b full=%b", rand_data, empty, full);
+            end
+            if (rd_en) begin
+                rd_en = 0;
+                if (sb_rd_ptr < sb_wr_ptr) begin
+                    if (dout === sb_mem[sb_rd_ptr]) begin
+                        pass_count = pass_count + 1;
+                        $display("Read: %h | expected: %h | PASS", dout, sb_mem[sb_rd_ptr]);
+                    end else begin
+                        fail_count = fail_count + 1;
+                        $display("Read: %h | expected: %h | *** FAIL ***", dout, sb_mem[sb_rd_ptr]);
+                    end
+                    sb_rd_ptr = sb_rd_ptr + 1;
+                end
+            end
         end
         wr_en = 0;
         rd_en = 0;
 
         #20;
+        $display("---- Scoreboard Summary ----");
+        $display("  PASS: %0d", pass_count);
+        $display("  FAIL: %0d", fail_count);
+
         $display("---- Coverage Report ----");
         $display("  Hit FULL state:                        %s", saw_full    ? "YES" : "NO");
         $display("  Hit EMPTY state:                       %s", saw_empty   ? "YES" : "NO");
@@ -90,17 +124,15 @@ module fifo_tb;
         #20 $finish;
     end
 
-    always @(posedge clk) begin
-        if (!rst)
-            assert (!(full && empty))
-            else $error("ASSERTION FAILED: full and empty are both true at time %0t", $time);
-    end
-
     task write_data(input [7:0] data);
         begin
             @(posedge clk);
             din = data;
             wr_en = 1;
+            if (!full) begin
+                sb_mem[sb_wr_ptr] = data;
+                sb_wr_ptr = sb_wr_ptr + 1;
+            end
             @(posedge clk);
             wr_en = 0;
             $display("Wrote: %h | empty=%b full=%b", data, empty, full);
@@ -113,7 +145,19 @@ module fifo_tb;
             rd_en = 1;
             @(posedge clk);
             rd_en = 0;
-            $display("Read: %h | empty=%b full=%b", dout, empty, full);
+
+            if (sb_rd_ptr < sb_wr_ptr) begin
+                if (dout === sb_mem[sb_rd_ptr]) begin
+                    pass_count = pass_count + 1;
+                    $display("Read: %h | expected: %h | PASS", dout, sb_mem[sb_rd_ptr]);
+                end else begin
+                    fail_count = fail_count + 1;
+                    $display("Read: %h | expected: %h | *** FAIL ***", dout, sb_mem[sb_rd_ptr]);
+                end
+                sb_rd_ptr = sb_rd_ptr + 1;
+            end else begin
+                $display("Read: %h | (empty FIFO, no check needed) | empty=%b full=%b", dout, empty, full);
+            end
         end
     endtask
 
