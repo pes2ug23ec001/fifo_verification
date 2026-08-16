@@ -13,7 +13,7 @@ module fifo #(
 );
 
     reg [DATA_WIDTH-1:0] mem [0:(1<<ADDR_WIDTH)-1];   // the memory array
-    reg [ADDR_WIDTH:0] wr_ptr;   // note: ADDR_WIDTH:0 -> one bit wider
+    reg [ADDR_WIDTH:0] wr_ptr;   
     reg [ADDR_WIDTH:0] rd_ptr;
 
     // write logic
@@ -37,11 +37,11 @@ module fifo #(
         end
     end
 
-    // full/empty logic
+    
     assign empty = (wr_ptr == rd_ptr);
     assign full  = (wr_ptr[ADDR_WIDTH-1:0] == rd_ptr[ADDR_WIDTH-1:0]) &&
                    (wr_ptr[ADDR_WIDTH]     != rd_ptr[ADDR_WIDTH]);
-    // assertion: full and empty should never both be true at once
+    //full and empty should never both be true at once
     always @(posedge clk) begin
         if (!rst)
             assert (!(full && empty))
